@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Golden Krill SDK privacy manifest (Apple PrivacyInfo.xcprivacy).
+
+  Truthful declaration of the SDK's data behavior, the thing a consuming app's App Review
+  checks for embedded SDKs:
+    - NSPrivacyTracking = false: the SDK does NOT track. No IDFA, no AAID, no cross-app or
+      cross-site linking, no per-user identifier of any kind. It therefore imposes NO App
+      Tracking Transparency (ATT) obligation on the host app.
+    - NSPrivacyTrackingDomains = empty: nothing the SDK contacts is a tracking domain
+      (a.golden-krill.com / golden-krill.com carry only aggregate, anonymous beacons).
+    - Collected data: ad interaction (which house ad was shown/tapped) only, reported as
+      anonymous aggregate counts. Declared NOT linked to the user and NOT used for tracking,
+      for app functionality (serving and frequency-capping the house ads).
+    - NSPrivacyAccessedAPITypes = empty: the SDK calls no required-reason API directly. Its
+      local persistence goes through shared_preferences, which ships its own manifest.
+
+  The Golden Krill SDK is distributed as a pure-Dart package (no native iOS framework), so
+  it is not an Apple-listed binary SDK; this file is the canonical declaration the host app
+  reflects in its own PrivacyInfo.xcprivacy. See INTEGRATION.md ("Privacy + Apple App
+  Review").
+-->
+<plist version="1.0">
+<dict>
+  <key>NSPrivacyTracking</key>
+  <false/>
+  <key>NSPrivacyTrackingDomains</key>
+  <array/>
+  <key>NSPrivacyCollectedDataTypes</key>
+  <array>
+    <dict>
+      <key>NSPrivacyCollectedDataType</key>
+      <string>NSPrivacyCollectedDataTypeProductInteraction</string>
+      <key>NSPrivacyCollectedDataTypeLinked</key>
+      <false/>
+      <key>NSPrivacyCollectedDataTypeTracking</key>
+      <false/>
+      <key>NSPrivacyCollectedDataTypePurposes</key>
+      <array>
+        <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+      </array>
+    </dict>
+  </array>
+  <key>NSPrivacyAccessedAPITypes</key>
+  <array/>
+</dict>
+</plist>

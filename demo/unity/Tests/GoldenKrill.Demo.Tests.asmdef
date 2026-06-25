@@ -1,0 +1,11 @@
+{
+  "name": "GoldenKrill.Demo.Tests",
+  "rootNamespace": "GoldenKrill.Demo.Tests",
+  "references": ["GoldenKrill.Demo", "GoldenKrill.Runtime"],
+  "optionalUnityReferences": ["TestAssemblies"],
+  "includePlatforms": ["Editor"],
+  "overrideReferences": true,
+  "precompiledReferences": ["nunit.framework.dll"],
+  "defineConstraints": ["UNITY_INCLUDE_TESTS"],
+  "autoReferenced": false
+}

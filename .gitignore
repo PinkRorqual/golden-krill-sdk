@@ -1,0 +1,17 @@
+.dart_tool/
+build/
+.flutter-plugins-dependencies
+pubspec.lock
+
+# React Native / Node
+node_modules/
+
+# Android / Gradle
+.gradle/
+
+# Unity / Xcode / macOS build outputs
+Library/
+Pods/
+*.xcarchive
+*.ipa
+.DS_Store

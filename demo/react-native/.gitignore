@@ -1,0 +1,7 @@
+# Generated / installed - never commit these.
+node_modules/
+android/
+ios/
+.expo/
+*.log
+package-lock.json

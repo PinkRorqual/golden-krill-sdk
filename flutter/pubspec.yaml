@@ -1,0 +1,28 @@
+name: goldenkrill
+description: >-
+  Golden Krill cross-promotion SDK. Fills a paid ad no-fill (or a small reserved
+  share of moments) with a house ad for another app instead of a blank.
+version: 0.9.0
+publish_to: none
+repository: https://github.com/PinkRorqual/golden-krill-sdk
+
+environment:
+  sdk: ">=3.4.0 <4.0.0"
+  flutter: ">=3.22.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^1.2.2
+  shared_preferences: ^2.5.5
+  url_launcher: ^6.3.0   # open the store on tap
+  cached_network_image: ^3.4.1   # disk-cache creatives (parity with RN's native pipeline)
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  crypto: ^3.0.3  # test-only: sha256 guard on the vendored GK1 conformance vector (pure Dart, not shipped)
+  # test-only: mock the url_launcher platform for the badge-tap test (pure Dart, not shipped)
+  url_launcher_platform_interface: ^2.3.2
+  plugin_platform_interface: ^2.1.0

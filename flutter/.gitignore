@@ -1,0 +1,22 @@
+# Flutter/Dart package
+.dart_tool/
+.packages
+build/
+pubspec.lock          # library: don't pin consumers
+.flutter-plugins
+.flutter-plugins-dependencies
+# Flutter-generated iOS host artifacts. This is a pure-Dart package; the only source under
+# ios/ is PrivacyInfo.xcprivacy (the Apple privacy manifest). `flutter test`/build scaffold
+# the rest, which must never be committed.
+ios/Flutter/
+ios/Runner/
+ios/.symlinks/
+.idea/
+*.iml
+.DS_Store
+coverage/
+# secrets
+*.jks
+*.keystore
+key.properties
+.env

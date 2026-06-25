@@ -1,0 +1,6 @@
+{
+  "name": "GoldenKrill.Demo",
+  "rootNamespace": "GoldenKrill.Demo",
+  "references": ["GoldenKrill.Runtime", "UnityEngine.UI"],
+  "autoReferenced": true
+}

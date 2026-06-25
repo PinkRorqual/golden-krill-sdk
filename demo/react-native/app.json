@@ -1,0 +1,16 @@
+{
+  "expo": {
+    "name": "Golden Krill Demo",
+    "slug": "golden-krill-demo",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "splash": { "backgroundColor": "#fbfaf6" },
+    "assetBundlePatterns": ["**/*"],
+    "ios": { "supportsTablet": true },
+    "android": { "package": "com.goldenkrill.demo" },
+    "plugins": [
+      ["expo-build-properties", { "android": { "kotlinVersion": "2.0.21" } }]
+    ]
+  }
+}

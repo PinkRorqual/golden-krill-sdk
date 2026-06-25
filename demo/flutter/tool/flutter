@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# Runs flutter inside pinkrorqual-flutter:latest with shared pub +
+# android-config volumes and a per-app gradle cache. After a successful
+# build, renames app-*.apk/.aab to <appname>-*.* where <appname> comes
+# from pubspec.yaml's `name:` field. Identical script across all apps
+# under mobile/.
+set -euo pipefail
+
+IMAGE="${PINKRORQUAL_FLUTTER_IMAGE:-pinkrorqual-flutter:latest}"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# Read once; used for both the per-app gradle cache volume name and the
+# post-build artifact rename.
+APPNAME=$(awk -F': *' '/^name: */{print $2; exit}' "$REPO_ROOT/pubspec.yaml")
+if [[ -z "$APPNAME" ]]; then
+  echo "tool/flutter: could not read pubspec.yaml name field" >&2
+  exit 1
+fi
+
+if [[ "${1:-}" == "--" ]]; then
+  shift
+  cmd=("$@")
+else
+  cmd=(flutter "$@")
+fi
+
+TTY_FLAG=""
+if [[ -t 0 ]]; then TTY_FLAG="-it"; fi
+
+exec_rc=0
+docker run --rm $TTY_FLAG \
+  -v "$REPO_ROOT":/workspaces/app \
+  -v pinkrorqual-pub-cache:/home/vscode/.pub-cache \
+  -v "pinkrorqual-${APPNAME}-gradle-cache":/home/vscode/.gradle \
+  -v pinkrorqual-android-config:/home/vscode/.android \
+  -w /workspaces/app \
+  -u vscode \
+  -e ANDROID_SDK_ROOT=/opt/android-sdk \
+  -e ANDROID_HOME=/opt/android-sdk \
+  "$IMAGE" \
+  bash -lc 'export PATH=/opt/flutter/bin:/opt/android-sdk/cmdline-tools/latest/bin:$PATH && '"$(printf '%q ' "${cmd[@]}")" \
+  || exec_rc=$?
+
+# Post-build artifact rename  -  gives <appname>-*.apk / -*.aab instead of
+# the generic app-*.* the Flutter Gradle Plugin emits. Works for both
+# debug and release; runs only on a successful build. Covers all three
+# locations Gradle writes APKs/AABs:
+#   build/app/outputs/flutter-apk/   (Flutter's copy of the APK + .sha1)
+#   build/app/outputs/apk/<variant>/ (AGP's native APK + output-metadata.json)
+#   build/app/outputs/bundle/<v>/    (App Bundles)
+if [[ $exec_rc -eq 0 ]]; then
+  shopt -s nullglob
+  for f in \
+      "$REPO_ROOT"/build/app/outputs/flutter-apk/app-*.apk \
+      "$REPO_ROOT"/build/app/outputs/flutter-apk/app-*.apk.sha1 \
+      "$REPO_ROOT"/build/app/outputs/apk/*/app-*.apk \
+      "$REPO_ROOT"/build/app/outputs/bundle/*/app-*.aab; do
+    mv -f "$f" "${f/\/app-/\/$APPNAME-}"
+  done
+  # AGP's output-metadata.json references the apk by basename  -  keep it
+  # in sync so anything that reads it (IDE install/run, CI gates) still
+  # finds the artifact.
+  for m in "$REPO_ROOT"/build/app/outputs/apk/*/output-metadata.json; do
+    sed -i "s/\"app-\([^\"]*\.apk\)\"/\"$APPNAME-\1\"/g" "$m"
+  done
+fi
+
+exit $exec_rc

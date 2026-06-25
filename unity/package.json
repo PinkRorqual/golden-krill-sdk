@@ -1,0 +1,11 @@
+{
+  "name": "com.pinkrorqual.goldenkrill",
+  "version": "0.9.0",
+  "displayName": "Golden Krill",
+  "description": "Golden Krill cross-promotion SDK for Unity (C#). Source-shipped, native-free: no DLL, no advertising id, app-keyed aggregate beacons only. Full parity with the Flutter and React Native SDKs.",
+  "unity": "2021.3",
+  "license": "Apache-2.0",
+  "author": { "name": "PinkRorqual", "email": "developer@cryptoven.eu", "url": "https://golden-krill.com" },
+  "keywords": ["ads", "cross-promotion", "house-ads", "golden-krill"],
+  "documentationUrl": "https://golden-krill.com/about"
+}

@@ -1,0 +1,4 @@
+include: package:flutter_lints/flutter.yaml
+
+# Studio house style: keep the flutter_lints defaults. Add project-specific
+# rule tweaks here only with a one-line rationale.
