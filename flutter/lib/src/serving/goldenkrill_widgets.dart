@@ -137,11 +137,28 @@ class _GoldenKrillCreativeFillState extends State<GoldenKrillCreativeFill> {
 /// Renders a creative image and opens its store link on tap. The official renderer:
 /// using it (vs your own `present`) is what lets the network credit a *measured*
 /// display later. Shows nothing if the image fails to load.
+/// The opaque backing colour for a banner creative: the creative's top sampled edge colour
+/// when known, else [neutral]. Painted *behind* the contain-fit image so a sub-pixel
+/// rounding gap (which renders as a ~1px white hairline on iOS when the host background
+/// shows through) shows the creative's own edge instead. Pure, for testing.
+Color gkBannerBackground(AdItem ad, {Color neutral = const Color(0xFF000000)}) {
+  if (ad.edgeColors.isNotEmpty) {
+    final c = gkParseColor(ad.edgeColors.first);
+    if (c != null) return c;
+  }
+  return neutral;
+}
+
 class GoldenKrillCreative extends StatelessWidget {
-  const GoldenKrillCreative(this.ad, {super.key, this.fit = BoxFit.contain});
+  const GoldenKrillCreative(this.ad, {super.key, this.fit = BoxFit.contain, this.background});
 
   final AdItem ad;
   final BoxFit fit;
+
+  /// Opaque colour painted behind the (contain-fit) image so a sub-pixel gap never reveals
+  /// the host background as a hairline. Null keeps the bare image (the full-screen path
+  /// backs it with [gkEdgeFill] instead, so it passes null).
+  final Color? background;
 
   void _open() {
     final s = ad.store;
@@ -152,15 +169,18 @@ class GoldenKrillCreative extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) => GestureDetector(
-        onTap: _open,
-        child: CachedNetworkImage(
-          imageUrl: ad.image,
-          fit: fit,
-          fadeInDuration: Duration.zero, // no flash; creatives rotate, not animate in
-          errorWidget: (_, __, ___) => const SizedBox.shrink(),
-        ),
-      );
+  Widget build(BuildContext context) {
+    Widget image = CachedNetworkImage(
+      imageUrl: ad.image,
+      fit: fit,
+      fadeInDuration: Duration.zero, // no flash; creatives rotate, not animate in
+      errorWidget: (_, __, ___) => const SizedBox.shrink(),
+    );
+    if (background != null) {
+      image = ColoredBox(color: background!, child: image);
+    }
+    return GestureDetector(onTap: _open, child: image);
+  }
 }
 
 /// Drop-in banner that owns the rotation loop and honors the contract:
@@ -333,7 +353,9 @@ class _GoldenKrillBannerState extends State<GoldenKrillBanner> {
 
   Future<Widget?> _house() async {
     final ad = await widget.ads.bannerHouse(widget.slot);
-    return ad == null ? null : GoldenKrillCreative(ad);
+    // Back the banner creative so a sub-pixel contain-fit gap never bleeds the host
+    // background through as a white hairline (the full-screen path uses gkEdgeFill instead).
+    return ad == null ? null : GoldenKrillCreative(ad, background: gkBannerBackground(ad));
   }
 
   @override

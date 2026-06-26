@@ -23,4 +23,18 @@ describe('Creative', () => {
     act(() => touch.props.onPress());
     expect(Linking.openURL).not.toHaveBeenCalled();
   });
+
+  it('paints an opaque backing when background is set (iOS white-hairline fix)', () => {
+    let r!: TestRenderer.ReactTestRenderer;
+    act(() => { r = TestRenderer.create(<Creative ad={{ id: 1, image: 'https://i' }} background="#123456" />); });
+    const touch = r.root.find((n) => n.type === 'TouchableOpacity');
+    expect(touch.props.style.backgroundColor).toBe('#123456');
+  });
+
+  it('has no backing when background is unset (default behaviour unchanged)', () => {
+    let r!: TestRenderer.ReactTestRenderer;
+    act(() => { r = TestRenderer.create(<Creative ad={{ id: 1, image: 'https://i' }} />); });
+    const touch = r.root.find((n) => n.type === 'TouchableOpacity');
+    expect(touch.props.style.backgroundColor).toBeUndefined();
+  });
 });

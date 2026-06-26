@@ -38,8 +38,9 @@ export function GoldenKrillBanner({ ads, slot = 'banner', width, height = 50, ro
 
   const houseEl = async (): Promise<React.ReactElement | null> => {
     const ad = await ads.bannerHouse(slot);
-    // Fill the (aspect-matched) box exactly: no crop, no letterbox. Creative defaults to 100%.
-    return ad ? <Creative ad={ad} resizeMode="contain" /> : null;
+    // Back the contain-fit creative with an opaque neutral so a sub-pixel gap never bleeds the
+    // host background through as a white hairline on iOS (parity with the Flutter SDK fix).
+    return ad ? <Creative ad={ad} resizeMode="contain" background={BANNER_BACKDROP} /> : null;
   };
 
   const show = (next: React.ReactElement | null, isHouse: boolean) => {
@@ -163,6 +164,11 @@ export function GoldenKrillBanner({ ads, slot = 'banner', width, height = 50, ro
 
 // Slot aspect ratios (must match the server's creative dimensions).
 const SLOT_ASPECT: Record<string, number> = { banner: 640 / 100, mrec: 600 / 500 };
+
+// Neutral backdrop behind a house banner creative. The RN AdItem carries no sampled edge
+// colours (unlike Flutter), so a neutral is used; a 1px sub-pixel gap shows this opaque
+// colour instead of the white host background.
+const BANNER_BACKDROP = '#000000';
 
 const bannerStyles = StyleSheet.create({
   badge: { position: 'absolute', bottom: 2, right: 2, backgroundColor: '#e7ad34', borderWidth: 0.5, borderColor: 'rgba(0,0,0,0.4)', paddingHorizontal: 3, borderRadius: 2 },

@@ -52,6 +52,23 @@ void main() {
     });
   });
 
+  group('gkBannerBackground (banner white-hairline fix)', () {
+    test('uses the top sampled edge colour when present', () {
+      const ad = AdItem(id: 1, image: 'i', store: 's',
+          edgeColors: ['#123456', '#000000', '#000000', '#000000']);
+      expect(gkBannerBackground(ad), const Color(0xFF123456));
+    });
+    test('falls back to the neutral when no edge colour is known', () {
+      const ad = AdItem(id: 1, image: 'i', store: 's');
+      expect(gkBannerBackground(ad), const Color(0xFF000000));
+      expect(gkBannerBackground(ad, neutral: const Color(0xFF222222)), const Color(0xFF222222));
+    });
+    test('falls back to the neutral when the edge colour is garbage', () {
+      const ad = AdItem(id: 1, image: 'i', store: 's', edgeColors: ['nope', 'x', 'y', 'z']);
+      expect(gkBannerBackground(ad), const Color(0xFF000000));
+    });
+  });
+
   group('AdItem additive wire parsing', () {
     test('defaults: contain, no edge colours, not photographic', () {
       final a = AdItem.fromList([1, 'img', 'store'])!;

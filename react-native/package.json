@@ -1,6 +1,6 @@
 {
   "name": "@goldenkrill/react-native",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "Golden Krill cross-promotion (house ads) SDK for React Native. Fills paid-ad no-fill with a cross-promo for another participating app.",
   "license": "Apache-2.0",
   "homepage": "https://golden-krill.com",

@@ -33,6 +33,20 @@ void main() {
     expect(find.byType(GoldenKrillCreative), findsOneWidget);
   });
 
+  testWidgets('banner creative paints an opaque backing (no white-hairline bleed)', (tester) async {
+    const bg = Color(0xFF123456);
+    await tester.pumpWidget(const MaterialApp(home: Scaffold(body: GoldenKrillCreative(ad, background: bg))));
+    final backed = tester.widgetList<ColoredBox>(find.byType(ColoredBox)).where((c) => c.color == bg);
+    expect(backed, isNotEmpty); // the contain-fit image now has an opaque backing
+  });
+
+  testWidgets('no backing when background is null (full-screen path unaffected)', (tester) async {
+    const bg = Color(0xFF123456);
+    await tester.pumpWidget(const MaterialApp(home: Scaffold(body: GoldenKrillCreative(ad))));
+    final backed = tester.widgetList<ColoredBox>(find.byType(ColoredBox)).where((c) => c.color == bg);
+    expect(backed, isEmpty);
+  });
+
   testWidgets('banner draws the compact GK mark on a house unit', (tester) async {
     final ads = adsServing(cfg: {'reserve_share': true, 'reserve_one_in': 1});
     await tester.pumpWidget(MaterialApp(
