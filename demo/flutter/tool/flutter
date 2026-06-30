@@ -2,8 +2,10 @@
 # Runs flutter inside pinkrorqual-flutter:latest with shared pub +
 # android-config volumes and a per-app gradle cache. After a successful
 # build, renames app-*.apk/.aab to <appname>-*.* where <appname> comes
-# from pubspec.yaml's `name:` field. Identical script across all apps
-# under mobile/.
+# from pubspec.yaml's `name:` field. Mirrors the studio template
+# (capp / golden-krill-reflex tool/flutter): same docker run flags
+# (named container + 12g memory cap), minus the android-ndk volume the
+# SDK does not need (pure-Dart package, no native build).
 set -euo pipefail
 
 IMAGE="${PINKRORQUAL_FLUTTER_IMAGE:-pinkrorqual-flutter:latest}"
@@ -29,6 +31,8 @@ if [[ -t 0 ]]; then TTY_FLAG="-it"; fi
 
 exec_rc=0
 docker run --rm $TTY_FLAG \
+  --name "pinkrorqual-${APPNAME}-$$" \
+  --memory=12g --memory-swap=12g \
   -v "$REPO_ROOT":/workspaces/app \
   -v pinkrorqual-pub-cache:/home/vscode/.pub-cache \
   -v "pinkrorqual-${APPNAME}-gradle-cache":/home/vscode/.gradle \
