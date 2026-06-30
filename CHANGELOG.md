@@ -3,6 +3,28 @@
 Consumers pin a git tag (Flutter `ref:`, RN `#tag`). Per-display serving + the trust
 beacons are server-driven, so most behavior changes need no consumer code change.
 
+## v0.9.3 - docs + test: connectivity_plus test-harness note (Flutter)
+
+Docs and a regression test only. No API change, no behavior change. Consumers may stay
+pinned to `v0.9.2`; this tag just makes the note discoverable.
+
+- **Test-harness footgun from v0.9.2.** The default connectivity probe runs
+  `Connectivity().checkConnectivity().timeout(2s)`. Under `flutter_test` the connectivity
+  platform channel is unstubbed, so that 2s guard timer is left pending and the framework
+  reports `A Timer is still pending` at teardown. It is a one-shot probe, not a leak (no
+  stream subscription), and the seam to avoid it already exists.
+- **Fix (consumer-side, in your tests).** In any widget test that touches serving, either
+  inject a fake probe, `GoldenKrillAds(connectivity: () async => true)` (preferred:
+  deterministic, arms no timer), or stub the platform channels:
+  `dev.fluttercommunity.plus/connectivity` (method `check` -> `['wifi']`) plus a null
+  handler on the `dev.fluttercommunity.plus/connectivity_status` event channel. See the
+  Testing section of `flutter/INTEGRATION.md`.
+- **Regression test.** `flutter/test/widgets_test.dart` drives the rewarded no-fill path
+  (HTTP stubbed to 400, fake `GkConnectivity` injected) and asserts a clean teardown with
+  no pending timer, documenting the injection contract.
+
+**Consumer migration:** none required. Optionally re-pin to `v0.9.3`; no code change.
+
 ## v0.9.2 - offline gate, fire-and-forget beacons, no double-show (Flutter)
 
 Three connected ad-serving fixes, all from production Corrupted Circuits sessions:

@@ -232,6 +232,21 @@ stack returns `false`. It never mediates paid-vs-paid - that stays your job.
 can unit-test the fallback branch with a `MockClient` and no network. See
 [`test/serving_test.dart`](test/serving_test.dart).
 
+**Connectivity in widget tests (since v0.9.2).** v0.9.2 added `connectivity_plus`, and the
+default probe runs `Connectivity().checkConnectivity().timeout(2s)`. Under `flutter_test`
+the connectivity platform channel is unstubbed, so that 2s guard timer is left pending and
+the test framework reports `A Timer is still pending` at teardown (it is a one-shot probe,
+not a leak: no stream subscription). In any widget test that touches serving, either:
+- **inject a fake probe (simplest):** `GoldenKrillAds(connectivity: () async => true)`
+  (or `() async => false` to exercise the offline path); or
+- **stub the platform channels:** answer the method channel
+  `dev.fluttercommunity.plus/connectivity` (method `check` -> `['wifi']`) and register a
+  null handler on the `dev.fluttercommunity.plus/connectivity_status` event channel.
+
+The injected-probe form is preferred: it is deterministic, arms no timer, and needs no
+plugin internals. See `test/offline_lag_test.dart` and the rewarded no-fill regression in
+`test/widgets_test.dart`.
+
 ## Debug logging
 
 Off by default, zero cost when off. Turn it on in dev and grep your console / logcat for

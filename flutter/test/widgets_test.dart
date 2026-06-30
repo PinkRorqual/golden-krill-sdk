@@ -126,6 +126,31 @@ void main() {
     expect(earned, isFalse);
   });
 
+  // Regression (v0.9.2 -> v0.9.3): the default connectivity probe runs
+  // `Connectivity().checkConnectivity().timeout(2s)`. Under flutter_test the connectivity
+  // platform channel is unstubbed, so that 2s guard timer is left pending and the binding
+  // reports "A Timer is still pending" at teardown (a one-shot probe, not a leak). The seam
+  // that avoids it is constructor injection: a fake GkConnectivity arms NO timer. This drives
+  // the rewarded no-fill path (HTTP 400, fake probe injected) and relies on the test binding's
+  // teardown pending-timer check as the assertion: a green run == no pending timer.
+  testWidgets('injected connectivity probe leaves no pending Timer on the rewarded no-fill path', (tester) async {
+    final mock = MockClient((_) async => http.Response('err', 400)); // config + ads both fail -> no inventory
+    final ads = GoldenKrillAds(
+      client: GoldenKrillClient(package: 'com.x', client: mock),
+      connectivity: () async => true, // the seam: a fake probe, never the 2s-timeout default
+    );
+    late BuildContext ctx;
+    await tester.pumpWidget(MaterialApp(home: Builder(builder: (c) {
+      ctx = c;
+      return const Scaffold();
+    })));
+    final earned = await ads.showRewarded(ctx, paid: () async => false);
+    expect(earned, isFalse); // paid no-fill + no house inventory -> nothing earned
+    // Deliberately NO pumpAndSettle / pump(>=2s): advancing the fake clock would FIRE and
+    // drain a stray connectivity Timer, hiding the bug. Let teardown's pending-timer check run.
+    await tester.pump();
+  });
+
   testWidgets('showInterstitial presents a house page on paid no-fill', (tester) async {
     final ads = adsServing();
     late BuildContext ctx;
