@@ -80,13 +80,16 @@ class GoldenKrillClient {
     return (bundle: AdBundle.fromJson(m), ok: true);
   }
 
-  /// Report display beacons (impressions). Fire-and-forget; failure ignored. Sends an
-  /// anonymous, weekly-rotating device token so the server can approximate distinct-device
-  /// reach per app WITHOUT any advertising id or stable identity (see trust-and-metrics).
-  Future<void> postEvents(List<Map<String, dynamic>> events, {String attestation = '', String nonce = ''}) async {
-    if (events.isEmpty) return;
+  /// Report display beacons (impressions / clicks). Sends an anonymous, weekly-rotating
+  /// device token so the server can approximate distinct-device reach per app WITHOUT any
+  /// advertising id or stable identity (see trust-and-metrics).
+  ///
+  /// Returns true on a 2xx (the caller's retry queue then drops the record) and false on
+  /// any failure (network / non-2xx) so the queue keeps it for a later retry. Never throws.
+  Future<bool> postEvents(List<Map<String, dynamic>> events, {String attestation = '', String nonce = ''}) async {
+    if (events.isEmpty) return true;
     try {
-      await _client.post(
+      final resp = await _client.post(
         gkEventsUrl(base: _base),
         headers: const {'Content-Type': 'application/json'},
         body: jsonEncode({
@@ -95,7 +98,10 @@ class GoldenKrillClient {
           if (testMode) 'test': true, // test beacons are accepted but counted nowhere
         }),
       );
-    } catch (_) {/* beacons never affect the app */}
+      return resp.statusCode >= 200 && resp.statusCode < 300;
+    } catch (_) {
+      return false; // beacons never affect the app; the queue retries later
+    }
   }
 
   /// Anonymous reach token: a random value kept in this app's own sandbox and **rotated

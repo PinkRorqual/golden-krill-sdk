@@ -32,7 +32,11 @@ void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});
     demoNoFill = false;
-    gk = GoldenKrillAds(client: GoldenKrillClient(package: kDemoPackage, client: buildMock()));
+    // Online + instant connectivity probe (the default talks to the real platform channel,
+    // which never resolves in a widget test). Serving now gates on connectivity.
+    gk = GoldenKrillAds(
+        client: GoldenKrillClient(package: kDemoPackage, client: buildMock()),
+        connectivity: () async => true);
   });
 
   testWidgets('launches on the Banner tab with the paid toggle + 4 destinations', (tester) async {

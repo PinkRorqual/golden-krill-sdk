@@ -405,12 +405,18 @@ class GoldenKrillInterstitialPage extends StatefulWidget {
     this.closeAfter = const Duration(seconds: 3),
     this.showBadge = false,
     this.badgeUrl = '',
+    this.onClosed,
   });
 
   final AdItem ad;
   final Duration closeAfter;
   final bool showBadge;
   final String badgeUrl;
+
+  /// Host hook fired the instant the user taps close, BEFORE the pop. Called
+  /// synchronously: it must not (and the SDK does not) await any network, so close is
+  /// always immediate even offline (Bug B).
+  final VoidCallback? onClosed;
 
   @override
   State<GoldenKrillInterstitialPage> createState() => _GoldenKrillInterstitialPageState();
@@ -448,7 +454,12 @@ class _GoldenKrillInterstitialPageState extends State<GoldenKrillInterstitialPag
                       child: IconButton(
                         icon: const Icon(Icons.close, color: Colors.white),
                         style: IconButton.styleFrom(backgroundColor: Colors.black45), // visible on any bg
-                        onPressed: () => Navigator.of(context).maybePop(),
+                        // Synchronous: notify the host, then pop. Telemetry is fire-and-
+                        // forget (queued), so close never waits on the network (Bug B).
+                        onPressed: () {
+                          widget.onClosed?.call();
+                          Navigator.of(context).maybePop();
+                        },
                       ),
                     ),
                 ],
@@ -463,12 +474,16 @@ class _GoldenKrillInterstitialPageState extends State<GoldenKrillInterstitialPag
 /// until it completes, then the reward is earned (a close button appears). Tapping the
 /// creative opens the store (a bonus). Pops `true` once the reward is earned.
 class GoldenKrillRewardedPage extends StatefulWidget {
-  const GoldenKrillRewardedPage(this.ad, {super.key, this.duration = const Duration(seconds: 5), this.showBadge = false, this.badgeUrl = ''});
+  const GoldenKrillRewardedPage(this.ad, {super.key, this.duration = const Duration(seconds: 5), this.showBadge = false, this.badgeUrl = '', this.onClosed});
 
   final AdItem ad;
   final Duration duration;
   final bool showBadge;
   final String badgeUrl;
+
+  /// Host hook fired synchronously when the (post-reward) close is tapped, before the
+  /// pop. Never awaits the network, so close is immediate even offline (Bug B).
+  final VoidCallback? onClosed;
 
   @override
   State<GoldenKrillRewardedPage> createState() => _GoldenKrillRewardedPageState();
@@ -549,7 +564,13 @@ class _GoldenKrillRewardedPageState extends State<GoldenKrillRewardedPage> {
                               child: IconButton(
                                 icon: const Icon(Icons.close, color: Colors.white),
                                 style: IconButton.styleFrom(backgroundColor: Colors.black45), // visible on any bg
-                                onPressed: () => Navigator.of(context).pop(true), // reward earned
+                                // Synchronous: notify the host, then pop with the reward.
+                                // Beacons are queued (fire-and-forget), so close never
+                                // waits on the network (Bug B).
+                                onPressed: () {
+                                  widget.onClosed?.call();
+                                  Navigator.of(context).pop(true); // reward earned
+                                },
                               ),
                             ),
                         ],
@@ -565,24 +586,32 @@ class _GoldenKrillRewardedPageState extends State<GoldenKrillRewardedPage> {
 /// Flutter-widget-free).
 extension GoldenKrillUI on GoldenKrillAds {
   /// One-call interstitial: runs the orchestration and presents any house ad with the
-  /// official full-screen renderer. Returns true if something was shown.
+  /// official full-screen renderer. Returns true if something was shown (false on a
+  /// no-fill, when offline, or when an ad is already on screen - see [show] for the
+  /// typed outcome). [onClosed] fires when the user dismisses the page.
+  ///
+  /// `present` returns the route's pop future, so the single in-flight gate (Bug C) is
+  /// held until the interstitial is dismissed: a second call while it is up is rejected.
   Future<bool> showInterstitial(
     BuildContext context, {
     required Future<bool> Function() paid,
     bool? showBadge, // null -> portal's show_ad_badge config
-  }) {
+    VoidCallback? onClosed,
+  }) async {
     final badge = showBadge ?? config.rollAdBadge();
     final badgeUrl = config.badgeUrl.isNotEmpty ? config.badgeUrl : kBadgeInfoUrl;
-    return show(
+    final r = await show(
       'interstitial',
       paid: paid,
       present: (ad) => Navigator.of(context).push(
         PageRouteBuilder<void>(
           opaque: false,
-          pageBuilder: (_, __, ___) => GoldenKrillInterstitialPage(ad, showBadge: badge, badgeUrl: badgeUrl),
+          pageBuilder: (_, __, ___) =>
+              GoldenKrillInterstitialPage(ad, showBadge: badge, badgeUrl: badgeUrl, onClosed: onClosed),
         ),
       ),
     );
+    return r.shown;
   }
 
   /// One-call rewarded. User-initiated, so it tries your **paid rewarded first** (real
@@ -594,31 +623,43 @@ extension GoldenKrillUI on GoldenKrillAds {
     required Future<bool> Function() paid,
     Duration? duration, // null -> portal-configured length (config.rewardedSeconds)
     bool? showBadge, // null -> portal's show_ad_badge config
+    VoidCallback? onClosed,
   }) async {
-    if (!hasSlot('interstitial')) await ensureReady(slot: 'interstitial');
-    final dur = duration ?? config.rewardedDuration();
-    final badge = showBadge ?? config.rollAdBadge();
-    final badgeUrl = config.badgeUrl.isNotEmpty ? config.badgeUrl : kBadgeInfoUrl;
-    // Reserve: on ~1-in-N reward moments, show a house cross-promo even if paid could
-    // fill (the user still earns the reward). Honors the portal's reserve setting.
-    final reserved = await rewardedReserve();
-    if (reserved != null) {
-      if (!context.mounted) return false;
-      return _presentRewarded(context, reserved, dur, badge, badgeUrl);
-    }
+    // Bug A: offline -> no reward ad (its beacons could not succeed). Bug C: reject while
+    // another ad is loading / on screen so two never stack. The gate is held across the
+    // whole flow (paid + house) and released in the finally.
+    if (!await isOnline()) return false;
+    if (!tryBeginShow()) return false;
     try {
-      if (await paid()) return true; // paid network granted the reward
-    } catch (_) {/* paid failure -> try house */}
-    final ad = await rewardedHouse(); // user-initiated; null = no inventory
-    if (ad == null || !context.mounted) return false;
-    return _presentRewarded(context, ad, dur, badge, badgeUrl);
+      if (!hasSlot('interstitial')) await ensureReady(slot: 'interstitial');
+      final dur = duration ?? config.rewardedDuration();
+      final badge = showBadge ?? config.rollAdBadge();
+      final badgeUrl = config.badgeUrl.isNotEmpty ? config.badgeUrl : kBadgeInfoUrl;
+      // Reserve: on ~1-in-N reward moments, show a house cross-promo even if paid could
+      // fill (the user still earns the reward). Honors the portal's reserve setting.
+      final reserved = await rewardedReserve();
+      if (reserved != null) {
+        if (!context.mounted) return false;
+        return _presentRewarded(context, reserved, dur, badge, badgeUrl, onClosed);
+      }
+      try {
+        if (await paid()) return true; // paid network granted the reward
+      } catch (_) {/* paid failure -> try house */}
+      final ad = await rewardedHouse(); // user-initiated; null = no inventory
+      if (ad == null || !context.mounted) return false;
+      return _presentRewarded(context, ad, dur, badge, badgeUrl, onClosed);
+    } finally {
+      endShow();
+    }
   }
 
-  Future<bool> _presentRewarded(BuildContext context, AdItem ad, Duration duration, bool showBadge, String badgeUrl) async {
+  Future<bool> _presentRewarded(
+      BuildContext context, AdItem ad, Duration duration, bool showBadge, String badgeUrl, VoidCallback? onClosed) async {
     final earned = await Navigator.of(context).push<bool>(
       PageRouteBuilder<bool>(
         opaque: true,
-        pageBuilder: (_, __, ___) => GoldenKrillRewardedPage(ad, duration: duration, showBadge: showBadge, badgeUrl: badgeUrl),
+        pageBuilder: (_, __, ___) =>
+            GoldenKrillRewardedPage(ad, duration: duration, showBadge: showBadge, badgeUrl: badgeUrl, onClosed: onClosed),
       ),
     );
     return earned ?? false;

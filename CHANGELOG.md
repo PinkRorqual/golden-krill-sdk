@@ -3,6 +3,35 @@
 Consumers pin a git tag (Flutter `ref:`, RN `#tag`). Per-display serving + the trust
 beacons are server-driven, so most behavior changes need no consumer code change.
 
+## v0.9.2 - offline gate, fire-and-forget beacons, no double-show (Flutter)
+
+Three connected ad-serving fixes, all from production Corrupted Circuits sessions:
+
+- **Offline gate (Bug A).** Ad availability + serving now gate on connectivity
+  (`connectivity_plus`). Offline, `show()` returns the typed `ShowOutcome.offline`,
+  `reserveAd`/`fallbackAd`/`bannerHouse` return `null`, and the SDK no longer serves a
+  stale cached creative whose click/impression beacons could not succeed. The last-good
+  failover stays a *transient-blip* safety net (online but a fetch failed), not an
+  offline-device path. New `gk.isAdAvailable()` (online AND not already showing).
+- **Telemetry never blocks the UI (Bug B).** Impression beacons go through a persistent,
+  fire-and-forget retry queue keyed on an event id, so duplicates collapse and unsent
+  beacons survive a restart and retry later. The close (X) button calls an optional
+  `onClosed` and pops **synchronously**, never awaiting a network POST, even on a dead
+  connection.
+- **No stacked ads under lag (Bug C).** `show()` (and `showInterstitial`/`showRewarded`)
+  serialise through a single in-flight gate: a second call while one ad is loading or on
+  screen is rejected with `ShowOutcome.alreadyShowing` instead of popping a second ad
+  under the first.
+
+API: `show()` now returns a typed `ShowResult` (`r.shown` is the old boolean; `r.outcome`
+distinguishes `shown`/`noFill`/`offline`/`alreadyShowing`) and its `present` may return a
+`Future` held until dismissal. The turnkey `showInterstitial`/`showRewarded` keep their
+`Future<bool>` shape and gain an optional `onClosed`. React Native + Unity unchanged.
+
+**Consumer migration:** bump the pin to `v0.9.2`, `flutter pub get` (pulls
+`connectivity_plus`), rebuild. No call-site change if you use `showInterstitial` /
+`showRewarded`; direct `show()` callers read `result.shown`.
+
 ## v0.9.0 - Unity SDK, test mode, iOS privacy manifest
 
 - **New platform: Unity (C#).** Source-shipped and native-free. The core serving logic is

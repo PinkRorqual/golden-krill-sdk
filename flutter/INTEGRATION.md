@@ -85,14 +85,21 @@ broken shape - the bundle loses the race every first launch.
 
 ```dart
 Future<void> showInterstitial() async {
-  await gk.show(
+  final r = await gk.show(
     'interstitial',
     paid: () async => admob.tryShowInterstitial(), // true if shown, false on no-fill
     present: present,                              // render the creative (below)
   );
   // gk runs reserve (1-in-N) -> paid -> fallback + own-studio, from config.
+  // r.shown is the old boolean; r.outcome distinguishes noFill / offline / alreadyShowing.
 }
 ```
+
+`show()` returns a typed [`ShowResult`]: `r.shown` is the old "did anything display?"
+boolean, and `r.outcome` is one of `shown` / `noFill` / `offline` / `alreadyShowing`.
+`present` may return a `Future` (e.g. the route's pop future) - the SDK holds a single
+in-flight gate until it completes, so a second `show()` while one ad is loading or on
+screen is rejected (`outcome == alreadyShowing`) and two ads never stack.
 
 Equivalent à-la-carte form, if you need manual control:
 
@@ -193,9 +200,23 @@ stack returns `false`. It never mediates paid-vs-paid - that stays your job.
 | `image` | creative image URL - show at the slot size |
 | `store` | click-tracker URL - open as-is on tap (counts the click, 302s to the store) |
 
+## Offline + availability
+
+- **Offline = no ad.** Every fetch/serve is gated on connectivity (`connectivity_plus`).
+  Offline, `show()` returns `outcome == offline`, `fallbackAd`/`reserveAd`/`bannerHouse`
+  return `null`, and the SDK does **not** serve a stale cached creative (its click /
+  impression beacons could not succeed). The last-good failover is only for a *transient*
+  blip while online, not a known-offline device.
+- **`gk.isAdAvailable()`** (`Future<bool>`): true only when online **and** no ad is
+  already loading / on screen. Gate a "show ad" button on it, and re-check at tap time.
+- Inject a custom probe in tests via `GoldenKrillAds(connectivity: () async => false)`.
+- **Telemetry never blocks the UI.** Impression beacons go to a persistent, deduplicated,
+  fire-and-forget retry queue; the close (X) button calls your optional `onClosed` and
+  pops **synchronously**, never awaiting the network, even offline.
+
 ## Behaviour you can rely on
 
-- **`null` is normal** (cap hit, cooldown, no eligible inventory, offline first run).
+- **`null` is normal** (cap hit, cooldown, no eligible inventory, offline, offline first run).
   Always collapse; never a placeholder.
 - **Frequency-capped** by config (`maxPerSession` + `houseCooldownSec`). Call
   `gk.resetSession()` on return from a long background for a fresh cap.

@@ -25,7 +25,10 @@ void main() {
       if (empty) return http.Response(gk1({'a': <dynamic>[], 'o': <dynamic>[]}), 200);
       return http.Response(gk1({'a': [[1, 'https://cdn.example/i.webp', 'https://store.example/app']], 'o': <dynamic>[]}), 200);
     });
-    return GoldenKrillAds(client: GoldenKrillClient(package: 'com.x', client: mock));
+    // Deterministic online probe: these widget tests exercise serving, which now gates on
+    // connectivity. Inject a fake (the default talks to the real platform channel, which
+    // never resolves in a widget test) so the gate is online + instant.
+    return GoldenKrillAds(client: GoldenKrillClient(package: 'com.x', client: mock), connectivity: () async => true);
   }
 
   testWidgets('GoldenKrillCreative builds its image renderer', (tester) async {

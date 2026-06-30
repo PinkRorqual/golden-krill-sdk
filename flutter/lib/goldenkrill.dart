@@ -11,5 +11,8 @@ export 'src/config/serving_endpoint.dart'
     show kServingBase, kConfigTtl, kAdsTtl, gkConfigUrl, gkAdsUrl, gkEventsUrl;
 export 'src/serving/serve_models.dart';
 export 'src/serving/serving_client.dart';
+export 'src/serving/connectivity.dart' show GkConnectivity, gkConnectivityPlus, gkIsOnline; // pluggable offline gate
+export 'package:connectivity_plus/connectivity_plus.dart' show ConnectivityResult;
+export 'src/serving/event_queue.dart' show GkEventQueue, GkEventPost; // persistent beacon retry queue
 export 'src/serving/goldenkrill_ads.dart';
 export 'src/serving/goldenkrill_widgets.dart';

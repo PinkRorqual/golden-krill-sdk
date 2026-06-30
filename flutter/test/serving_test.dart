@@ -139,11 +139,13 @@ void main() {
         }
         return http.Response(gk1({'a': [[1, 'i', 's']], 'o': []}), 200);
       });
-      final ads = GoldenKrillAds(client: GoldenKrillClient(package: 'com.x', client: mock));
+      final ads = GoldenKrillAds(
+          client: GoldenKrillClient(package: 'com.x', client: mock), connectivity: () async => true);
       await ads.ensureReady(slot: 'banner');
       AdItem? presented;
-      final shown = await ads.show('banner', paid: () async => true, present: (a) => presented = a);
-      expect(shown, isTrue);
+      final r = await ads.show('banner', paid: () async => true, present: (a) => presented = a);
+      expect(r.shown, isTrue);
+      expect(r.ad, isNull); // paid took it; SDK never sees the creative
       expect(presented, isNull); // paid took it; no house shown
     });
 
@@ -154,11 +156,13 @@ void main() {
         }
         return http.Response(gk1({'a': [[1, 'i', 's']], 'o': []}), 200);
       });
-      final ads = GoldenKrillAds(client: GoldenKrillClient(package: 'com.x', client: mock));
+      final ads = GoldenKrillAds(
+          client: GoldenKrillClient(package: 'com.x', client: mock), connectivity: () async => true);
       await ads.ensureReady(slot: 'banner');
       AdItem? presented;
-      final shown = await ads.show('banner', paid: () async => false, present: (a) => presented = a);
-      expect(shown, isTrue);
+      final r = await ads.show('banner', paid: () async => false, present: (a) => presented = a);
+      expect(r.shown, isTrue);
+      expect(r.ad!.id, 1); // fallback creative surfaced on the result
       expect(presented!.id, 1);
     });
 
@@ -171,7 +175,7 @@ void main() {
         }
         return http.Response(gk1({'a': [[1, 'i', 's']], 'o': []}), 200);
       });
-      final gk = GoldenKrillAds(client: GoldenKrillClient(package: 'com.x', client: mock));
+      final gk = GoldenKrillAds(client: GoldenKrillClient(package: 'com.x', client: mock), connectivity: () async => true);
       await gk.ensureReady(slot: 'banner');
       expect(await gk.reserveAd('banner'), isNotNull); // 1st
       expect(await gk.reserveAd('banner'), isNull); // 2nd
@@ -187,7 +191,7 @@ void main() {
         }
         return http.Response(gk1({'a': [], 'o': []}), 200);
       });
-      final ads = GoldenKrillAds(client: GoldenKrillClient(package: 'com.x', client: mock));
+      final ads = GoldenKrillAds(client: GoldenKrillClient(package: 'com.x', client: mock), connectivity: () async => true);
       await ads.ensureReady(slot: 'banner');
       expect(ads.bannerReserveTurn(0), isTrue); // 1st unit = ours
       expect(ads.bannerReserveTurn(1), isFalse);
@@ -202,11 +206,12 @@ void main() {
         }
         return http.Response(gk1({'a': [[1, 'i', 's']], 'o': []}), 200);
       });
-      final gk = GoldenKrillAds(client: GoldenKrillClient(package: 'com.x', client: mock));
+      final gk = GoldenKrillAds(
+          client: GoldenKrillClient(package: 'com.x', client: mock), connectivity: () async => true);
       AdItem? presented;
       // no ensureReady() call - show() must self-heal
-      final shown = await gk.show('banner', paid: () async => false, present: (a) => presented = a);
-      expect(shown, isTrue);
+      final r = await gk.show('banner', paid: () async => false, present: (a) => presented = a);
+      expect(r.shown, isTrue);
       expect(presented!.id, 1);
     });
 
@@ -224,7 +229,7 @@ void main() {
             }),
             200);
       });
-      final ads = GoldenKrillAds(client: GoldenKrillClient(package: 'com.x', client: mock));
+      final ads = GoldenKrillAds(client: GoldenKrillClient(package: 'com.x', client: mock), connectivity: () async => true);
       await ads.ensureReady(slot: 'interstitial');
       expect((await ads.nextAd('interstitial'))!.id, 7);
     });
@@ -248,7 +253,7 @@ void main() {
             gk1({'a': [[1, 'https://x/a.png', 'https://play.google.com/store/apps/details?id=a']], 'o': []}),
             200);
       });
-      final ads = GoldenKrillAds(client: GoldenKrillClient(package: 'com.x', client: mock));
+      final ads = GoldenKrillAds(client: GoldenKrillClient(package: 'com.x', client: mock), connectivity: () async => true);
       await ads.ensureReady(slot: 'interstitial');
       expect(await ads.rewardedReserve(), isNotNull); // moment 0 -> ours
       expect(await ads.rewardedReserve(), isNull);    // 1 -> paid
@@ -267,7 +272,7 @@ void main() {
             ], 'o': []}),
             200);
       });
-      final ads = GoldenKrillAds(client: GoldenKrillClient(package: 'com.x', client: mock));
+      final ads = GoldenKrillAds(client: GoldenKrillClient(package: 'com.x', client: mock), connectivity: () async => true);
       expect(ads.rewardedAvailable.value, isFalse);
       await ads.ensureReady(slot: 'interstitial');
       expect(ads.rewardedReady, isTrue);
@@ -300,7 +305,7 @@ void main() {
         return http.Response(
             gk1({'a': [[7, 'https://x/i.png', 'https://play.google.com/store/apps/details?id=z']], 'o': []}), 200);
       });
-      final ads = GoldenKrillAds(client: GoldenKrillClient(package: 'com.x', client: mock));
+      final ads = GoldenKrillAds(client: GoldenKrillClient(package: 'com.x', client: mock), connectivity: () async => true);
       await tester.pumpWidget(MaterialApp(
           home: GoldenKrillBanner(
         ads: ads,
@@ -319,7 +324,7 @@ void main() {
         if (req.url.path.contains('/config/')) return http.Response(gk1({}), 200);
         return http.Response(gk1({'a': [], 'o': []}), 200);
       });
-      final ads = GoldenKrillAds(client: GoldenKrillClient(package: 'com.x', client: mock));
+      final ads = GoldenKrillAds(client: GoldenKrillClient(package: 'com.x', client: mock), connectivity: () async => true);
       await tester.pumpWidget(MaterialApp(
           home: GoldenKrillBanner(ads: ads, unit: const Duration(hours: 1))));
       await tester.pump();
@@ -336,7 +341,7 @@ void main() {
         return http.Response(
             gk1({'a': [[7, 'https://x/i.png', 'https://play.google.com/store/apps/details?id=z']], 'o': []}), 200);
       });
-      final ads = GoldenKrillAds(client: GoldenKrillClient(package: 'com.x', client: mock));
+      final ads = GoldenKrillAds(client: GoldenKrillClient(package: 'com.x', client: mock), connectivity: () async => true);
       await tester.pumpWidget(MaterialApp(
           home: GoldenKrillBanner(
         ads: ads,
@@ -362,7 +367,7 @@ void main() {
         if (req.url.path.contains('/config/')) return http.Response(gk1({'reserve_share': false}), 200);
         return http.Response(gk1({'a': [], 'o': []}), 200);
       });
-      final ads = GoldenKrillAds(client: GoldenKrillClient(package: 'com.x', client: mock));
+      final ads = GoldenKrillAds(client: GoldenKrillClient(package: 'com.x', client: mock), connectivity: () async => true);
       await tester.pumpWidget(MaterialApp(
           home: GoldenKrillBanner(
         ads: ads,

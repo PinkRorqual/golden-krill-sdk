@@ -2,7 +2,7 @@ name: goldenkrill
 description: >-
   Golden Krill cross-promotion SDK. Fills a paid ad no-fill (or a small reserved
   share of moments) with a house ad for another app instead of a blank.
-version: 0.9.1
+version: 0.9.2
 publish_to: none
 repository: https://github.com/PinkRorqual/golden-krill-sdk
 
@@ -17,6 +17,7 @@ dependencies:
   shared_preferences: ^2.5.5
   url_launcher: ^6.3.0   # open the store on tap
   cached_network_image: ^3.4.1   # disk-cache creatives (parity with RN's native pipeline)
+  connectivity_plus: ^6.1.0   # gate availability/serving on connectivity (no offline CTAs)
 
 dev_dependencies:
   flutter_test:

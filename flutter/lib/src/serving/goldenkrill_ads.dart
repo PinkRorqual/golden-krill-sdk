@@ -3,8 +3,53 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../gk_debug.dart';
+import 'connectivity.dart';
+import 'event_queue.dart';
 import 'serve_models.dart';
 import 'serving_client.dart';
+
+/// Why a [GoldenKrillAds.show] call ended. A typed result so a caller can tell a real
+/// no-fill apart from the connectivity gate (offline) or a rejected concurrent call.
+enum ShowOutcome {
+  /// An ad (reserve, paid, or fallback house) was shown.
+  shown,
+
+  /// Everything was tried and nothing filled (a real, successful no-fill).
+  noFill,
+
+  /// The device is offline, so nothing was served (Bug A). No stale cached creative is
+  /// shown, because its click / impression beacons could not succeed.
+  offline,
+
+  /// An ad is already loading or on screen, so this call was rejected to stop two ads
+  /// stacking (Bug C).
+  alreadyShowing,
+}
+
+/// Typed outcome of [GoldenKrillAds.show]. Use [shown] for the common "did anything
+/// display?" check; inspect [outcome] to branch on offline / already-showing.
+@immutable
+class ShowResult {
+  const ShowResult._(this.outcome, [this.ad]);
+
+  final ShowOutcome outcome;
+
+  /// The presented house creative when [outcome] is [ShowOutcome.shown] via reserve or
+  /// fallback; null when the host's own paid ad filled (the SDK never sees it).
+  final AdItem? ad;
+
+  /// True iff something was shown (reserve / paid / fallback). Mirrors the old `bool`
+  /// return so call sites can read `(await show(...)).shown`.
+  bool get shown => outcome == ShowOutcome.shown;
+
+  static const ShowResult offline = ShowResult._(ShowOutcome.offline);
+  static const ShowResult alreadyShowing = ShowResult._(ShowOutcome.alreadyShowing);
+  static const ShowResult noFill = ShowResult._(ShowOutcome.noFill);
+  static ShowResult shownWith(AdItem? ad) => ShowResult._(ShowOutcome.shown, ad);
+
+  @override
+  String toString() => 'ShowResult($outcome${ad != null ? ', ad=${ad!.id}' : ''})';
+}
 
 /// How long a last-good response stays usable as an offline failover.
 const Duration kFailoverTtl = Duration(hours: 1);
@@ -55,12 +100,27 @@ class GoldenKrillAds {
     DateTime Function()? now,
     this.attestationProvider,
     bool? testMode,
+    GkConnectivity? connectivity,
+    GkEventQueue? events,
   })  : assert(package != null || client != null, 'provide package or client'),
         _client = client ?? GoldenKrillClient(package: package!, testMode: testMode ?? kDebugMode),
-        _now = now ?? DateTime.now;
+        _now = now ?? DateTime.now,
+        _connectivity = connectivity ?? gkConnectivityPlus {
+    _events = events ?? GkEventQueue(post: _client.postEvents);
+  }
 
   final GoldenKrillClient _client;
   final DateTime Function() _now;
+
+  /// Connectivity probe (Bug A). Offline -> no ad is available or served. Injectable.
+  final GkConnectivity _connectivity;
+
+  /// Persistent fire-and-forget beacon queue (Bug B). Impressions never block the UI.
+  late final GkEventQueue _events;
+
+  /// True while a [show]/`show*` call is loading or its ad is on screen. The single
+  /// in-flight gate that stops two full-screen ads stacking (Bug C).
+  bool _showing = false;
 
   /// Optional host hook to forward an attestation token on beacons. Null (default) =
   /// no attestation, today's behavior. See [AttestationProvider].
@@ -91,6 +151,29 @@ class GoldenKrillAds {
   /// Whether a slot has a warmed/last-good response (used by the UI helpers to self-heal).
   bool hasSlot(String slot) => _failover.containsKey(slot);
 
+  /// True while an ad is loading or on screen (Bug C). [show]/`show*` reject while set.
+  bool get isAdShowing => _showing;
+
+  /// Whether the device currently has a network path (Bug A). False -> offline.
+  Future<bool> isOnline() => _connectivity();
+
+  /// Whether an ad can be shown *right now*: the device is online AND no ad is already
+  /// loading / on screen. Re-check at tap time (connectivity changes). Does NOT promise
+  /// inventory - the show re-fetches; use [rewardedReady] for the inventory signal.
+  Future<bool> isAdAvailable() async => !_showing && await isOnline();
+
+  /// Claim the single in-flight show slot. Returns false if an ad is already loading or
+  /// on screen (Bug C). Pair every `true` with [endShow] in a `finally`. Used by the
+  /// `show*` extension helpers so rewarded + interstitial share one gate.
+  bool tryBeginShow() {
+    if (_showing) return false;
+    _showing = true;
+    return true;
+  }
+
+  /// Release the in-flight show slot. Idempotent.
+  void endShow() => _showing = false;
+
   void _refreshRewardedSignal() => rewardedAvailable.value = rewardedReady;
 
   /// Load config (cached for the run) and warm the slot's failover copy. Call once at
@@ -110,6 +193,13 @@ class GoldenKrillAds {
   /// if empty) and return it. On failure, reuse the last good copy if it is still fresh,
   /// else empty. Never throws.
   Future<AdBundle> _fetchBundle(String slot, String lang) async {
+    // Bug A: offline -> serve nothing, and do NOT fall back to a stale cached creative
+    // (its click / impression beacons could not succeed). The offline failover is for a
+    // transient online blip, not a known-offline device.
+    if (!await isOnline()) {
+      gkLog(() => 'fetch[$slot] skipped: offline (no creative, no failover)');
+      return AdBundle.empty;
+    }
     final r = await _client.fetchAds(slot: slot, lang: lang);
     if (r.ok) {
       _failover[slot] = _Failover(r.bundle, _now());
@@ -134,25 +224,35 @@ class GoldenKrillAds {
   }
 
   /// Fire an impression beacon, forwarding a host attestation token when an
-  /// [attestationProvider] is set. Fire-and-forget + best-effort: a null/throwing/slow
-  /// provider just beacons WITHOUT attestation - it is never blocked or dropped. Called
-  /// once per beacon (not per impression in a loop); the host caches/refreshes its token.
+  /// [attestationProvider] is set. Fire-and-forget + best-effort (Bug B): the events are
+  /// handed to a persistent retry queue and the POST runs in the background, so a hung
+  /// network NEVER blocks the caller (e.g. the close button). A null/throwing/slow
+  /// attestation provider just beacons WITHOUT attestation - never blocked or dropped.
   void _beacon(List<Map<String, dynamic>> events, String nonce) {
     // ignore: discarded_futures - intentional fire-and-forget; never blocks the caller
-    _postBeacon(events, nonce);
+    _enqueueBeacon(events, nonce);
   }
 
-  Future<void> _postBeacon(List<Map<String, dynamic>> events, String nonce) async {
-    var token = '';
+  Future<void> _enqueueBeacon(List<Map<String, dynamic>> events, String nonce) async {
+    final token = await _attestationToken(nonce);
+    await _events.add(_eventId(events, nonce), events, attestation: token, nonce: nonce);
+  }
+
+  /// Stable dedup key for a beacon: the per-serve nonce plus each event's creative/slot/
+  /// kind. A retry of the same impression collapses onto the same key (no double-count).
+  String _eventId(List<Map<String, dynamic>> events, String nonce) {
+    final sig = events.map((e) => '${e['creative']}:${e['slot']}:${e['kind']}').join(',');
+    return '$nonce|$sig';
+  }
+
+  Future<String> _attestationToken(String nonce) async {
     final provider = attestationProvider;
-    if (provider != null) {
-      try {
-        token = await provider(nonce).timeout(kAttestationTimeout);
-      } catch (_) {
-        token = ''; // null / throw / timeout -> forward nothing, still beacon
-      }
+    if (provider == null) return '';
+    try {
+      return await provider(nonce).timeout(kAttestationTimeout);
+    } catch (_) {
+      return ''; // null / throw / timeout -> forward nothing, still beacon
     }
-    await _client.postEvents(events, attestation: token, nonce: nonce);
   }
 
   bool _gkCooldownOk() {
@@ -258,39 +358,60 @@ class GoldenKrillAds {
   ///   on tap). The impression is already recorded.
   ///
   /// Flow: reserve (1-in-N, if enabled) -> your paid ad -> fallback + own-studio.
-  /// Returns `true` if anything was shown, else `false`. Never throws.
-  Future<bool> show(
+  ///
+  /// Returns a typed [ShowResult]: [ShowOutcome.offline] when the device has no network
+  /// (Bug A - nothing served, no stale creative), [ShowOutcome.alreadyShowing] when a
+  /// call is already loading / on screen (Bug C - rejected so two ads never stack), else
+  /// [ShowOutcome.shown] / [ShowOutcome.noFill]. Use `result.shown` for the old boolean.
+  ///
+  /// [present] may return a `Future` that completes when the creative is dismissed; the
+  /// in-flight gate is held for as long as that future runs, so nothing new can show on
+  /// top. A synchronous (`void`) [present] releases the gate as soon as it returns. Never
+  /// throws.
+  Future<ShowResult> show(
     String slot, {
     required Future<bool> Function() paid,
-    required void Function(AdItem ad) present,
+    required FutureOr<void> Function(AdItem ad) present,
     String lang = 'en',
   }) async {
-    if (!_configLoaded) {
-      _config = await _client.loadConfig();
-      _configLoaded = true;
+    if (!await isOnline()) {
+      gkLog(() => 'show[$slot]: offline -> not served');
+      return ShowResult.offline; // Bug A
     }
-    final reserved = await reserveAd(slot, lang: lang);
-    if (reserved != null) {
-      gkLog(() => 'show[$slot]: reserve id=${reserved.id}');
-      present(reserved);
-      return true;
+    if (!tryBeginShow()) {
+      gkLog(() => 'show[$slot]: already showing -> rejected');
+      return ShowResult.alreadyShowing; // Bug C
     }
-    bool paidShown = false;
     try {
-      paidShown = await paid();
-    } catch (_) {/* a paid failure just means we try to fill */}
-    if (paidShown) {
-      gkLog(() => 'show[$slot]: paid');
-      return true;
+      if (!_configLoaded) {
+        _config = await _client.loadConfig();
+        _configLoaded = true;
+      }
+      final reserved = await reserveAd(slot, lang: lang);
+      if (reserved != null) {
+        gkLog(() => 'show[$slot]: reserve id=${reserved.id}');
+        await present(reserved);
+        return ShowResult.shownWith(reserved);
+      }
+      bool paidShown = false;
+      try {
+        paidShown = await paid();
+      } catch (_) {/* a paid failure just means we try to fill */}
+      if (paidShown) {
+        gkLog(() => 'show[$slot]: paid');
+        return ShowResult.shownWith(null);
+      }
+      final filler = await fallbackAd(slot, lang: lang);
+      if (filler != null) {
+        gkLog(() => 'show[$slot]: fallback id=${filler.id}');
+        await present(filler);
+        return ShowResult.shownWith(filler);
+      }
+      gkLog(() => 'show[$slot]: nothing');
+      return ShowResult.noFill;
+    } finally {
+      endShow();
     }
-    final filler = await fallbackAd(slot, lang: lang);
-    if (filler != null) {
-      gkLog(() => 'show[$slot]: fallback id=${filler.id}');
-      present(filler);
-      return true;
-    }
-    gkLog(() => 'show[$slot]: nothing');
-    return false;
   }
 
   /// New session (e.g. app resumed after long background): reset the reserve cadence +
